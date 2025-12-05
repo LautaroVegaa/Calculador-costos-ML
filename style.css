@@ -204,7 +204,9 @@ th {
 /* Estilos específicos para Admin/Formularios */
 input[type="text"],
 input[type="number"],
-input[type="date"] {
+input[type="date"],
+input[type="email"],    /* <-- Nuevo */
+input[type="password"] { /* <-- Nuevo */
     width: 100%;
     padding: 12px 15px;
     margin-top: 8px;
@@ -440,3 +442,38 @@ td:nth-child(2) {
     white-space: nowrap;
 }
 .btn-fix:hover { background: #333; }
+
+/* --- ESTILOS LOGIN --- */
+/* Clase especial para el body del login para centrar todo */
+body.login-layout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 20px !important; /* Sobrescribe el padding general */
+    box-sizing: border-box;
+}
+
+.login-container {
+    width: 100%;
+    max-width: 400px;
+    margin: 0; /* Quita el margen auto del container general */
+}
+
+.login-icon {
+    font-size: 3em;
+    margin-bottom: 15px;
+    display: block;
+    text-align: center;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.1));
+}
+
+/* Animación suave para errores */
+.fade-in {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}

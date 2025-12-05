@@ -11,9 +11,12 @@
 </head>
 <body>
 
-    <nav class="nav-container">
+    <nav class="nav-container" style="align-items: center;">
         <a href="index.html" class="nav-link">📊 Tablero de Ventas</a>
         <a href="admin.html" class="nav-link active">📦 Cargar Costos</a>
+        <button onclick="cerrarSesion()" style="width: auto; margin: 0 0 5px 20px; padding: 5px 15px; background: #ef4444; font-size: 0.8em;">
+            Salir <i class="fas fa-sign-out-alt"></i>
+        </button>
     </nav>
 
     <div class="container" style="max-width: 600px;">
@@ -73,9 +76,22 @@
     </div>
 
     <script>
-        // --- CONFIGURACIÓN SUPABASE ---
-        // La conexión 'db' se carga automáticamente desde config.js
-        // No definimos las claves aquí.
+
+        // --- SEGURIDAD: VERIFICAR SESIÓN ---
+        async function protegerRuta() {
+            const { data: { session } } = await db.auth.getSession();
+            if (!session) {
+                // Si no hay sesión, lo mandamos al login
+                window.location.href = 'login.html';
+            }
+        }
+        protegerRuta();
+
+        // Función para cerrar sesión (Cerrar Sesión)
+        async function cerrarSesion() {
+            await db.auth.signOut();
+            window.location.href = 'login.html';
+        }
 
         // Variables Globales
         let ID_EN_EDICION = null;

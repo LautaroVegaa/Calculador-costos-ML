@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Iniciar Sesión - Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+</head>
+<body class="login-layout">
+
+    <div class="container login-container">
+        <div class="card">
+            <span class="login-icon">🔐</span>
+            <h2>Acceso Admin</h2>
+            <p style="text-align: center; color: var(--text-secondary); margin-bottom: 30px;">
+                Ingresa tus credenciales para gestionar el sistema.
+            </p>
+            
+            <form onsubmit="event.preventDefault(); iniciarSesion();">
+                <div>
+                    <label style="font-weight: 600; font-size: 0.9em; color: var(--text-primary);">Correo Electrónico</label>
+                    <input type="email" id="email" placeholder="ejemplo@email.com" required />
+                </div>
+                
+                <div style="margin-top: 15px;">
+                    <label style="font-weight: 600; font-size: 0.9em; color: var(--text-primary);">Contraseña</label>
+                    <input type="password" id="password" placeholder="••••••••" required />
+                </div>
+                
+                <button type="submit" id="btnLogin">
+                    Iniciar Sesión
+                </button>
+            </form>
+
+            <div id="errorMsg" class="metric-box text-danger fade-in" style="display: none; margin-top: 20px; padding: 10px; background: var(--red-bg);">
+                </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 20px;">
+            <a href="index.html" class="nav-link" style="font-size: 0.9em;">← Volver al Tablero</a>
+        </div>
+    </div>
+
+    <script>
+        // --- LOGICA DE LOGIN ---
+
+        // 1. Verificar sesión existente
+        async function checkSession() {
+            const { data: { session } } = await db.auth.getSession();
+            if (session) window.location.href = 'admin.html';
+        }
+        checkSession();
+
+        // 2. Iniciar sesión
+        async function iniciarSesion() {
+            const btn = document.getElementById('btnLogin');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const msg = document.getElementById('errorMsg');
+
+            // UI Loading
+            btn.disabled = true;
+            const textoOriginal = btn.innerText;
+            btn.innerText = "Verificando...";
+            msg.style.display = 'none';
+
+            try {
+                const { data, error } = await db.auth.signInWithPassword({
+                    email: email,
+                    password: password,
+                });
+
+                if (error) throw error;
+
+                // Éxito
+                window.location.href = 'admin.html';
+
+            } catch (error) {
+                console.error("Error login:", error.message);
+                msg.innerText = "Credenciales incorrectas.";
+                msg.style.display = 'block';
+                
+                btn.disabled = false;
+                btn.innerText = textoOriginal;
+            }
+        }
+    </script>
+</body>
+</html>
