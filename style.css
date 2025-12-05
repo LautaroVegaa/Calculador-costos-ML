@@ -144,7 +144,7 @@ h1, h2 {
     color: var(--green-text);
 }
 
-/* Tablas */
+/* Tablas General */
 .table-container {
     overflow-x: auto; 
     margin-top: 30px;
@@ -163,16 +163,6 @@ th {
     color: var(--text-secondary);
     font-weight: 600;
     border-bottom: 1px solid #eee;
-}
-
-td {
-    padding: 15px;
-    border-bottom: 1px solid #f5f5f5;
-    vertical-align: middle;
-}
-
-tr:last-child td {
-    border-bottom: none;
 }
 
 /* Utilidades de Texto y Badges */
@@ -281,3 +271,172 @@ button:disabled {
     background: var(--red-bg);
     color: var(--red-text);
 }
+
+/* --- CORRECCIÓN DE ALINEACIÓN DE TABLAS Y BOTONES --- */
+
+/* 1. Forzar alineación vertical al medio y evitar saltos de línea */
+td {
+    vertical-align: middle !important;
+    padding: 12px 15px;
+    border-bottom: 1px solid #f5f5f5;
+    white-space: nowrap; /* Evita que el precio o fecha bajen de línea */
+}
+
+tr:last-child td {
+    border-bottom: none;
+}
+
+/* 2. Excepción para el nombre del producto: puede cortarse con '...' pero en una línea */
+td:nth-child(2) {
+    max-width: 220px;       
+    white-space: nowrap;    
+    overflow: hidden;       
+    text-overflow: ellipsis; 
+}
+
+/* 3. Contenedor de botones (Flexbox para centrado perfecto) */
+.action-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 0;
+    height: 100%;
+}
+
+/* 4. Estilos de los botones individuales */
+.btn-delete, .btn-edit {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    display: inline-flex; /* Inline-flex es clave para centrar el icono */
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    font-size: 0.9em;
+    margin: 0; /* Asegura que no tengan margen externo */
+}
+
+/* Colores Botones */
+.btn-delete { background: #fee2e2; color: #dc2626; }
+.btn-delete:hover { background: #dc2626; color: white; transform: scale(1.05); }
+
+.btn-edit { background: #e0f2fe; color: #0284c7; }
+.btn-edit:hover { background: #0284c7; color: white; transform: scale(1.05); }
+
+/* --- ESTILOS DEL BOTÓN MÁGICO Y MODAL --- */
+
+/* Botón de Alerta Flotante o Estático */
+.alert-container {
+    text-align: center;
+    margin: 20px 0;
+    display: none; /* Oculto por defecto */
+}
+
+.btn-magic {
+    background: var(--red-text); /* Color rojo fuerte */
+    color: white;
+    padding: 12px 25px;
+    border-radius: 50px; /* Redondo estilo píldora */
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(220, 38, 38, 0.4);
+    transition: 0.3s;
+    animation: pulse 2s infinite;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    width: auto; /* Sobreescribe el width:100% genérico */
+    margin-top: 0;
+}
+
+.btn-magic:hover {
+    transform: scale(1.05);
+    background: #b91c1c;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(220, 38, 38, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+/* Modal (Fondo Oscuro) */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: 0.3s;
+}
+
+.modal-overlay.open {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Caja del Modal */
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: var(--border-radius);
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    position: relative;
+}
+
+.close-modal {
+    position: absolute;
+    top: 15px; right: 20px;
+    font-size: 1.5em;
+    cursor: pointer;
+    color: #999;
+}
+
+/* Lista dentro del Modal */
+.missing-list {
+    list-style: none;
+    padding: 0;
+    margin-top: 20px;
+}
+
+.missing-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    gap: 10px;
+}
+
+.missing-item span {
+    font-size: 0.9em;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 280px;
+}
+
+.btn-fix {
+    background: var(--text-primary);
+    color: white;
+    text-decoration: none;
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 0.8em;
+    white-space: nowrap;
+}
+.btn-fix:hover { background: #333; }

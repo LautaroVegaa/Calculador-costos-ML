@@ -1,0 +1,15 @@
+# --- Archivos de Configuración y Claves ---
+config.js
+.env
+
+# --- Archivos del Sistema Operativo ---
+.DS_Store
+Thumbs.db
+
+# --- Logs y Errores ---
+*.log
+npm-debug.log
+
+# --- Dependencias (si usas npm a futuro) ---
+node_modules/
+dist/

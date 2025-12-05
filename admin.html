@@ -6,6 +6,8 @@
     <title>Cargar Costos - Panel Admin</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
 
@@ -14,40 +16,89 @@
         <a href="admin.html" class="nav-link active">📦 Cargar Costos</a>
     </nav>
 
-    <div class="container" style="max-width: 500px;">
+    <div class="container" style="max-width: 600px;">
+        
         <div class="card">
-            <h2>Nuevo Precio de Costo</h2>
-            <p style="text-align: center; color: #666; font-size: 0.9em; margin-bottom: 30px;">
-                Registra el precio de compra y su fecha de vigencia.
+            <h2 id="tituloForm">Nuevo Precio de Costo</h2>
+            <p style="text-align: center; color: #666; font-size: 0.9em; margin-bottom: 20px;">
+                Carga o edita el costo asociado al título exacto.
             </p>
 
             <label>Título exacto de MercadoLibre</label>
             <input type="text" id="nombreProducto" placeholder="Pega el título exacto aquí..." autocomplete="off" />
-            <div class="hint">Tip: Copialo del Excel de ventas.</div>
+            
+            <div class="row" style="display: flex; gap: 15px;">
+                <div style="flex:1">
+                    <label>Costo de Compra ($)</label>
+                    <input type="number" id="costo" placeholder="Ej: 5000" />
+                </div>
+                <div style="flex:1">
+                    <label>Fecha de Vigencia</label>
+                    <input type="date" id="fecha" />
+                </div>
+            </div>
 
-            <label>Costo de Compra ($)</label>
-            <input type="number" id="costo" placeholder="Ej: 5000" />
-
-            <label>Fecha de Vigencia</label>
-            <input type="date" id="fecha" />
-            <div class="hint">Fecha desde la cual aplica este costo.</div>
-
-            <button onclick="guardarCosto()" id="btnGuardar">Guardar Precio</button>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="guardarCosto()" id="btnGuardar">Guardar Precio</button>
+                <button onclick="cancelarEdicion()" id="btnCancelar" style="display: none; background: #ccc; margin-top: 30px;">Cancelar</button>
+            </div>
             
             <div id="mensaje"></div>
+        </div>
+
+        <div class="card">
+            <h3>Historial de Costos</h3>
+            
+            <div style="position: relative; margin-bottom: 15px;">
+                <i class="fas fa-search" style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: #999;"></i>
+                <input type="text" id="buscador" placeholder="Buscar por nombre de producto..." 
+                       oninput="buscarCostos()" 
+                       style="padding-left: 40px; margin-top: 0;">
+            </div>
+
+            <div class="table-container" style="max-height: 400px; overflow-y: auto;">
+                <table id="tablaHistorial">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Producto</th>
+                            <th>Costo</th>
+                            <th style="text-align: center;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
     <script>
         // --- CONFIGURACIÓN SUPABASE ---
-        const SUPABASE_URL = 'https://vmxixhhszyzodnpvqaqu.supabase.co';
-        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZteGl4aGhzenl6b2RucHZxYXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4OTMxNzMsImV4cCI6MjA4MDQ2OTE3M30.tOv4o_hxSwCyLEiohLVW99mt6NGzOsvy3ptswV4Qb8Q';
-        
-        const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // La conexión 'db' se carga automáticamente desde config.js
+        // No definimos las claves aquí.
 
-        // Poner fecha de hoy por defecto
+        // Variables Globales
+        let ID_EN_EDICION = null;
+        let timeoutBusqueda = null; // Para el "debounce" del buscador
+
+        // Inicialización
         document.getElementById('fecha').valueAsDate = new Date();
 
+        // --- LÓGICA BOTÓN MÁGICO (RECIBIR PARÁMETROS) ---
+        // Verifica si venimos desde el botón de faltantes con un producto específico
+        const params = new URLSearchParams(window.location.search);
+        const productoFaltante = params.get('producto');
+        
+        if (productoFaltante) {
+            // Decodificamos el nombre y lo asignamos
+            document.getElementById('nombreProducto').value = decodeURIComponent(productoFaltante);
+            // Ponemos el foco en el costo para agilizar
+            document.getElementById('costo').focus();
+        }
+
+        cargarHistorialReciente(); // Carga inicial
+
+        // --- LÓGICA DE GUARDADO ---
         async function guardarCosto() {
             const btn = document.getElementById('btnGuardar');
             const nombre = document.getElementById('nombreProducto').value.trim();
@@ -60,62 +111,186 @@
             }
 
             btn.disabled = true;
-            btn.innerText = "Guardando...";
+            btn.innerText = ID_EN_EDICION ? "Actualizando..." : "Guardando...";
 
             try {
-                // 1. BUSCAR O CREAR PRODUCTO
-                let { data: productoExistente, error: errorBusqueda } = await db
+                // 1. OBTENER ID DEL PRODUCTO
+                // Usamos 'db' que viene de config.js
+                let { data: prod, error: errBusqueda } = await db
                     .from('productos')
                     .select('id')
                     .eq('nombre_ml', nombre)
-                    .maybeSingle(); 
+                    .maybeSingle();
 
-                if (errorBusqueda) throw errorBusqueda;
+                if (errBusqueda) throw errBusqueda;
 
                 let productoId;
-
-                if (productoExistente) {
-                    productoId = productoExistente.id;
-                    console.log("Producto ya existe, ID:", productoId);
+                if (prod) {
+                    productoId = prod.id;
                 } else {
-                    // Si no existe, lo creamos
-                    console.log("Creando producto nuevo...");
-                    const { data: nuevoProducto, error: errorCreacion } = await db
+                    const { data: nuevo, error: errCreacion } = await db
                         .from('productos')
                         .insert([{ nombre_ml: nombre }])
                         .select()
                         .single();
-                    
-                    if (errorCreacion) throw errorCreacion;
-                    productoId = nuevoProducto.id;
+                    if (errCreacion) throw errCreacion;
+                    productoId = nuevo.id;
                 }
 
-                // 2. INSERTAR EL COSTO EN EL HISTORIAL
-                const { error: errorHistorial } = await db
-                    .from('historial_costos')
-                    .insert([
-                        { 
+                // 2. INSERTAR O ACTUALIZAR
+                if (ID_EN_EDICION) {
+                    const { error } = await db
+                        .from('historial_costos')
+                        .update({ 
                             producto_id: productoId, 
                             costo_compra: costo, 
                             fecha_vigencia: fecha 
-                        }
-                    ]);
-
-                if (errorHistorial) throw errorHistorial;
-
-                mostrarMensaje("¡Guardado correctamente! ✅", true);
+                        })
+                        .eq('id', ID_EN_EDICION);
+                    if (error) throw error;
+                    mostrarMensaje("¡Precio actualizado! ✏️", true);
+                } else {
+                    const { error } = await db
+                        .from('historial_costos')
+                        .insert([{ 
+                            producto_id: productoId, 
+                            costo_compra: costo, 
+                            fecha_vigencia: fecha 
+                        }]);
+                    if (error) throw error;
+                    mostrarMensaje("¡Guardado correctamente! ✅", true);
+                }
                 
-                // Limpiar campo de costo y volver el foco al título para seguir cargando rápido
-                document.getElementById('costo').value = '';
-                document.getElementById('nombreProducto').value = '';
-                document.getElementById('nombreProducto').focus();
+                limpiarFormulario();
+                cargarHistorialReciente(); // Recargar tabla
 
             } catch (err) {
                 console.error(err);
                 mostrarMensaje("Error: " + err.message, false);
             } finally {
                 btn.disabled = false;
-                btn.innerText = "Guardar Precio";
+                cancelarEdicion();
+            }
+        }
+
+        // --- LÓGICA DE BÚSQUEDA Y TABLA ---
+        
+        // Función input con retardo (debounce) para no saturar la BD
+        function buscarCostos() {
+            const termino = document.getElementById('buscador').value.trim();
+            
+            // Limpiar el timeout anterior si el usuario sigue escribiendo
+            if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
+
+            // Esperar 300ms antes de hacer la búsqueda real
+            timeoutBusqueda = setTimeout(() => {
+                cargarHistorialReciente(termino);
+            }, 300);
+        }
+
+        async function cargarHistorialReciente(terminoBusqueda = "") {
+            const tbody = document.querySelector('#tablaHistorial tbody');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px;">Cargando...</td></tr>';
+
+            try {
+                // Construimos la consulta
+                let query = db
+                    .from('historial_costos')
+                    .select(`id, costo_compra, fecha_vigencia, productos!inner ( nombre_ml )`)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                // Si hay texto, filtramos
+                if (terminoBusqueda) {
+                    query = query.ilike('productos.nombre_ml', `%${terminoBusqueda}%`);
+                }
+
+                const { data, error } = await query;
+
+                if (error) throw error;
+
+                if (data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding: 20px; color: #888;">No se encontraron resultados</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = '';
+                data.forEach(item => {
+                    const nombre = item.productos?.nombre_ml || 'Desconocido';
+                    const fechaFmt = new Date(item.fecha_vigencia).toLocaleDateString();
+                    const nombreSafe = nombre.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td style="font-size:0.85em">${fechaFmt}</td>
+                        <td style="font-size:0.85em;" title="${nombreSafe}">
+                            ${nombre}
+                        </td>
+                        <td>$${item.costo_compra}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-edit" onclick="prepararEdicion('${item.id}', '${nombreSafe}', '${item.costo_compra}', '${item.fecha_vigencia}')" title="Editar">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                                <button class="btn-delete" onclick="borrarCosto('${item.id}')" title="Eliminar">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+            } catch (err) {
+                console.error(err);
+                tbody.innerHTML = '<tr><td colspan="4" style="color:red; text-align:center">Error de conexión</td></tr>';
+            }
+        }
+
+        // --- UTILIDADES ---
+        function prepararEdicion(id, nombre, costo, fecha) {
+            document.getElementById('nombreProducto').value = nombre;
+            document.getElementById('costo').value = costo;
+            document.getElementById('fecha').value = fecha;
+
+            ID_EN_EDICION = id;
+            document.getElementById('tituloForm').innerText = "Editando Precio";
+            document.getElementById('btnGuardar').innerText = "Actualizar Precio";
+            document.getElementById('btnGuardar').style.background = "#0284c7";
+            document.getElementById('btnCancelar').style.display = "block";
+
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function cancelarEdicion() {
+            ID_EN_EDICION = null;
+            document.getElementById('tituloForm').innerText = "Nuevo Precio de Costo";
+            document.getElementById('btnGuardar').innerText = "Guardar Precio";
+            document.getElementById('btnGuardar').style.background = "";
+            document.getElementById('btnCancelar').style.display = "none";
+            
+            if(document.getElementById('btnGuardar').innerText === "Guardar Precio") {
+                 // Opción: Limpiar campos si se desea
+            }
+        }
+
+        function limpiarFormulario() {
+            document.getElementById('costo').value = '';
+            document.getElementById('nombreProducto').value = '';
+            document.getElementById('fecha').valueAsDate = new Date();
+            document.getElementById('nombreProducto').focus();
+        }
+
+        async function borrarCosto(id) {
+            if(!confirm("¿Seguro que quieres borrar este precio?")) return;
+            
+            const { error } = await db.from('historial_costos').delete().eq('id', id);
+            
+            if (error) alert("Error: " + error.message);
+            else {
+                // Recargamos manteniendo la búsqueda actual
+                const busquedaActual = document.getElementById('buscador').value;
+                cargarHistorialReciente(busquedaActual);
             }
         }
 
