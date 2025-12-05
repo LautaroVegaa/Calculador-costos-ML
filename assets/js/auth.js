@@ -42,8 +42,37 @@ async function iniciarSesion() {
     }
 }
 
-// Cerrar Sesión
-async function cerrarSesion() {
-    await db.auth.signOut();
-    window.location.href = 'login.html';
+// --- NUEVA LÓGICA DE CIERRE DE SESIÓN CON MODAL ---
+
+// 1. Se llama al clickear "Salir"
+function cerrarSesion() {
+    const modal = document.getElementById('modalConfirmarLogout');
+    if (modal) {
+        modal.classList.add('open');
+    } else {
+        // Fallback: Si por alguna razón no está el modal, salimos directo
+        confirmarLogout();
+    }
 }
+
+// 2. Se llama al cancelar
+function cancelarLogout() {
+    const modal = document.getElementById('modalConfirmarLogout');
+    if (modal) modal.classList.remove('open');
+}
+
+// 3. Ejecuta el cierre real
+async function confirmarLogout() {
+    try {
+        await db.auth.signOut();
+    } catch (error) {
+        console.error("Error al cerrar sesión:", error);
+    } finally {
+        window.location.href = 'login.html';
+    }
+}
+
+// Listener global para cerrar modal al hacer click fuera (Overlay)
+document.addEventListener('click', (e) => {
+    if (e.target.id === 'modalConfirmarLogout') cancelarLogout();
+});

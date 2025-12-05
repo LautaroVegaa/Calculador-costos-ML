@@ -24,7 +24,7 @@
     <div class="container">
         <h1>Rentabilidad Real</h1>
 
-        <div class="card">
+        <div class="card" id="cardUpload">
             <div class="upload-area">
                 <span class="upload-icon">📂</span>
                 <strong>Arrastra tu Excel de Ventas aquí</strong>
@@ -36,6 +36,12 @@
 
         <div id="dashboard" style="display:none;">
             
+            <div style="text-align: right; margin-bottom: 10px;">
+                <button onclick="borrarDatos()" style="background: #ef4444; width: auto; font-size: 0.9em; padding: 8px 15px; margin: 0;">
+                    🗑️ Cargar otro archivo
+                </button>
+            </div>
+
             <div id="alertContainer" class="alert-container">
                 <button onclick="abrirModalFaltantes()" class="btn-magic">
                     ⚠️ Hay <span id="countFaltantes">0</span> productos sin costo
@@ -110,6 +116,25 @@
             <p class="text-muted">Estos productos se están contando con costo $0.</p>
             <ul id="listaFaltantes" class="missing-list"></ul>
             <button onclick="cerrarModalFaltantes()" style="margin-top: 20px;">Cerrar</button>
+        </div>
+    </div>
+
+    <div id="modalConfirmarBorrar" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div style="font-size: 3em; margin-bottom: 10px;">🗑️</div>
+            <h2>¿Cerrar archivo actual?</h2>
+            <p class="text-muted">
+                Se eliminarán los datos de la pantalla. Deberás volver a cargar el Excel si quieres verlos de nuevo.
+            </p>
+            
+            <div class="modal-actions">
+                <button onclick="cancelarBorrado()" class="btn-secondary">
+                    Cancelar
+                </button>
+                <button onclick="confirmarBorrado()" class="btn-danger">
+                    Sí, cerrar
+                </button>
+            </div>
         </div>
     </div>
 

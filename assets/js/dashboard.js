@@ -6,9 +6,10 @@ let DATOS_PARA_BD = [];
 let DATOS_PARA_EXPORTAR = []; 
 let PRODUCTOS_FALTANTES = new Set(); 
 
-// 1. Carga Inicial de Productos
+// 1. Carga Inicial (Base de Datos + Persistencia Local)
 window.addEventListener('load', async () => {
     try {
+        // A. Cargar precios de Supabase
         const { data: productos, error } = await db
             .from('productos')
             .select(`nombre_ml, historial_costos ( costo_compra, fecha_vigencia )`);
@@ -23,6 +24,15 @@ window.addEventListener('load', async () => {
             }
         });
         console.log("Base de datos cargada.");
+
+        // B. (NUEVO) Verificar si hay datos persistentes en LocalStorage
+        const datosGuardados = localStorage.getItem('ml_ventas_temp');
+        if (datosGuardados) {
+            console.log("Recuperando sesión anterior...");
+            const ventas = JSON.parse(datosGuardados);
+            procesarDatos(ventas, false); // false = no volver a guardar (ya está guardado)
+        }
+
     } catch (err) {
         console.error(err);
         alert("Error de conexión: " + err.message);
@@ -66,20 +76,38 @@ if(inputExcel) {
 
                 if (!encontrado) throw new Error("No se encontró la columna 'Título'.");
                 const ventas = XLSX.utils.sheet_to_json(sheet, { range: headerRow });
-                procesarDatos(ventas);
+                
+                // Procesar y guardar en LocalStorage
+                procesarDatos(ventas, true);
 
             } catch (error) {
                 console.error(error);
                 alert("Error al leer: " + error.message);
             } finally {
                 loadingMsg.style.display = 'none';
+                // Limpiar el input para permitir cargar el mismo archivo si es necesario
+                inputExcel.value = ''; 
             }
         };
         reader.readAsArrayBuffer(file);
     });
 }
 
-function procesarDatos(ventas) {
+// (MODIFICADO) Acepta parámetro guardarEnStorage
+function procesarDatos(ventas, guardarEnStorage = false) {
+    // 1. Persistencia
+    if (guardarEnStorage) {
+        try {
+            localStorage.setItem('ml_ventas_temp', JSON.stringify(ventas));
+        } catch (e) {
+            console.warn("No se pudo guardar en local (archivo muy grande?)", e);
+        }
+    }
+
+    // 2. Ocultar zona de carga y mostrar dashboard
+    document.getElementById('cardUpload').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
     let totales = { venta: 0, ml: 0, costo: 0, ganancia: 0 };
     const tbody = document.querySelector('#tablaDetalle tbody');
     tbody.innerHTML = '';
@@ -112,7 +140,7 @@ function procesarDatos(ventas) {
             }
             if (isNaN(fechaVenta.getTime())) fechaVenta = new Date();
 
-            // Costos
+            // Costos logic
             let costoUnitario = 0;
             let uiCosto = `<span class="badge badge-warning">Sin Costo</span>`;
             const historial = MEMORIA_PRECIOS[titulo];
@@ -147,7 +175,7 @@ function procesarDatos(ventas) {
             const keyFecha = fechaVenta.toISOString().split('T')[0];
             gananciaPorDia[keyFecha] = (gananciaPorDia[keyFecha] || 0) + gananciaNeta;
 
-            // Guardar para BD
+            // Guardar arrays
             const idVenta = fila['Número de venta'] || fila['Venta'] || fila['# de venta'];
             if (idVenta) {
                 DATOS_PARA_BD.push({
@@ -162,7 +190,6 @@ function procesarDatos(ventas) {
                 });
             }
 
-            // Guardar para Exportar
             DATOS_PARA_EXPORTAR.push({
                 "Fecha": fechaVenta.toLocaleDateString(),
                 "Producto": titulo,
@@ -191,14 +218,47 @@ function procesarDatos(ventas) {
     renderizarGrafico(gananciaPorDia);
     actualizarBotonMagico();
 
-    document.getElementById('dashboard').style.display = 'block';
     if (DATOS_PARA_EXPORTAR.length > 0) {
         document.getElementById('btnExportar').style.display = 'inline-block';
         document.getElementById('btnGuardarNube').style.display = 'inline-block';
     }
 }
 
-// Funciones Auxiliares UI
+// Función 1: Solo abre el modal (Reemplaza a la anterior borrarDatos)
+function borrarDatos() {
+    // Ya no usamos confirm(), solo abrimos el modal
+    document.getElementById('modalConfirmarBorrar').classList.add('open');
+}
+
+// Función 2: Cierra el modal sin hacer nada
+function cancelarBorrado() {
+    document.getElementById('modalConfirmarBorrar').classList.remove('open');
+}
+
+// Función 3: Ejecuta la lógica real (La que estaba antes dentro del if)
+function confirmarBorrado() {
+    localStorage.removeItem('ml_ventas_temp');
+    
+    // Resetear variables
+    DATOS_PARA_BD = [];
+    DATOS_PARA_EXPORTAR = [];
+    PRODUCTOS_FALTANTES.clear();
+    if (myChart) myChart.destroy();
+    
+    // Resetear UI
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('cardUpload').style.display = 'block'; 
+    document.getElementById('inputExcel').value = ''; 
+    
+    // Cerrar el modal
+    cancelarBorrado();
+}
+
+// Cerrar modal si hacen click afuera (Overlay)
+document.getElementById('modalConfirmarBorrar')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalConfirmarBorrar') cancelarBorrado();
+});
+
 function actualizarDashboard(t) {
     document.getElementById('totalVentas').innerText = `$${t.venta.toLocaleString()}`;
     document.getElementById('totalCostosML').innerText = `-$${t.ml.toLocaleString()}`;
@@ -239,7 +299,6 @@ function renderizarGrafico(dataDias) {
     });
 }
 
-// Funciones Interactivas
 function actualizarBotonMagico() {
     const btn = document.getElementById('alertContainer');
     const cant = PRODUCTOS_FALTANTES.size;

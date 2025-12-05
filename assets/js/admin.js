@@ -1,16 +1,17 @@
 // assets/js/admin.js
 
-// Variables Globales del Admin
+// Variables Globales
 let ID_EN_EDICION = null;
+let ID_A_BORRAR = null; // <-- NUEVA VARIABLE PARA EL MODAL
 let timeoutBusqueda = null;
 
-// Inicialización al cargar la página
+// Inicialización
 window.addEventListener('load', () => {
-    // 1. Establecer fecha hoy
+    // 1. Fecha hoy
     const fechaInput = document.getElementById('fecha');
     if(fechaInput) fechaInput.valueAsDate = new Date();
 
-    // 2. Verificar parámetros URL (Redirección desde faltantes)
+    // 2. Parámetros URL (Redirección desde faltantes)
     const params = new URLSearchParams(window.location.search);
     const productoFaltante = params.get('producto');
     
@@ -23,6 +24,7 @@ window.addEventListener('load', () => {
     cargarHistorialReciente();
 });
 
+// --- LÓGICA DE GUARDADO ---
 async function guardarCosto() {
     const btn = document.getElementById('btnGuardar');
     const nombre = document.getElementById('nombreProducto').value.trim();
@@ -60,7 +62,6 @@ async function guardarCosto() {
             productoId = nuevo.id;
         }
 
-        // Insertar o Actualizar Costo
         const datosCosto = { 
             producto_id: productoId, 
             costo_compra: costo, 
@@ -85,10 +86,11 @@ async function guardarCosto() {
         mostrarMensaje("Error: " + err.message, false);
     } finally {
         btn.disabled = false;
-        cancelarEdicion();
+        cancelarEdicion(); // Resetea el formulario al estado original
     }
 }
 
+// --- LÓGICA DE TABLA Y BÚSQUEDA ---
 function buscarCostos() {
     const termino = document.getElementById('buscador').value.trim();
     if (timeoutBusqueda) clearTimeout(timeoutBusqueda);
@@ -124,7 +126,6 @@ async function cargarHistorialReciente(terminoBusqueda = "") {
         data.forEach(item => {
             const nombre = item.productos?.nombre_ml || 'Desconocido';
             const fechaFmt = new Date(item.fecha_vigencia).toLocaleDateString();
-            // Escapar comillas para evitar errores en el HTML string
             const nombreSafe = nombre.replace(/'/g, "\\'").replace(/"/g, '&quot;');
 
             const tr = document.createElement('tr');
@@ -148,6 +149,7 @@ async function cargarHistorialReciente(terminoBusqueda = "") {
     }
 }
 
+// --- EDICIÓN ---
 function prepararEdicion(id, nombre, costo, fecha) {
     document.getElementById('nombreProducto').value = nombre;
     document.getElementById('costo').value = costo;
@@ -178,13 +180,45 @@ function limpiarFormulario() {
     document.getElementById('fecha').valueAsDate = new Date();
 }
 
-async function borrarCosto(id) {
-    if(!confirm("¿Seguro que quieres borrar este precio?")) return;
-    const { error } = await db.from('historial_costos').delete().eq('id', id);
-    if (error) alert("Error: " + error.message);
-    else cargarHistorialReciente(document.getElementById('buscador').value);
+// --- ELIMINACIÓN (NUEVA LÓGICA CON MODAL) ---
+
+// 1. Se llama al hacer click en el tacho de basura
+function borrarCosto(id) {
+    ID_A_BORRAR = id; // Guardamos el ID temporalmente
+    document.getElementById('modalConfirmarBorrar').classList.add('open');
 }
 
+// 2. Se llama al hacer click en "Cancelar" o fuera del modal
+function cancelarBorrado() {
+    ID_A_BORRAR = null;
+    document.getElementById('modalConfirmarBorrar').classList.remove('open');
+}
+
+// 3. Se llama al hacer click en "Sí, eliminar"
+async function confirmarBorrado() {
+    if (!ID_A_BORRAR) return;
+
+    try {
+        const { error } = await db.from('historial_costos').delete().eq('id', ID_A_BORRAR);
+        if (error) throw error;
+
+        mostrarMensaje("Precio eliminado correctamente", true);
+        // Recargar la tabla manteniendo la búsqueda actual
+        cargarHistorialReciente(document.getElementById('buscador').value);
+
+    } catch (error) {
+        mostrarMensaje("Error: " + error.message, false);
+    } finally {
+        cancelarBorrado(); // Cerrar modal y limpiar variable
+    }
+}
+
+// Cierra el modal si se hace click en el fondo oscuro
+document.getElementById('modalConfirmarBorrar')?.addEventListener('click', (e) => {
+    if (e.target.id === 'modalConfirmarBorrar') cancelarBorrado();
+});
+
+// --- UTILIDADES ---
 function mostrarMensaje(texto, esExito) {
     const div = document.getElementById('mensaje');
     div.innerText = texto;

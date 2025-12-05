@@ -80,6 +80,44 @@
         </div>
     </div>
 
+    <div id="modalConfirmarBorrar" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div style="font-size: 3em; margin-bottom: 10px;">🗑️</div>
+            <h2>¿Eliminar este precio?</h2>
+            <p class="text-muted">
+                Esta acción eliminará el costo del historial y no se puede deshacer.
+            </p>
+            
+            <div class="modal-actions">
+                <button onclick="cancelarBorrado()" class="btn-secondary">
+                    Cancelar
+                </button>
+                <button onclick="confirmarBorrado()" class="btn-danger">
+                    Sí, eliminar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalConfirmarLogout" class="modal-overlay">
+        <div class="modal-content" style="max-width: 400px; text-align: center;">
+            <div style="font-size: 3em; margin-bottom: 10px;">🚪</div>
+            <h2>¿Cerrar Sesión?</h2>
+            <p class="text-muted">
+                Tendrás que volver a ingresar tus credenciales para acceder al panel.
+            </p>
+            
+            <div class="modal-actions">
+                <button onclick="cancelarLogout()" class="btn-secondary">
+                    Cancelar
+                </button>
+                <button onclick="confirmarLogout()" class="btn-danger">
+                    Sí, salir
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>protegerRuta();</script>
 
 </body>
