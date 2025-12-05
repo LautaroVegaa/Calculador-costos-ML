@@ -4,9 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar Sesión - Admin</title>
-    <link rel="stylesheet" href="style.css">
+    
+    <link rel="stylesheet" href="assets/css/style.css">
+    
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="config.js"></script>
+    
+    <script src="assets/js/auth.js"></script>
 </head>
 <body class="login-layout">
 
@@ -34,8 +38,7 @@
                 </button>
             </form>
 
-            <div id="errorMsg" class="metric-box text-danger fade-in" style="display: none; margin-top: 20px; padding: 10px; background: var(--red-bg);">
-                </div>
+            <div id="errorMsg" class="metric-box text-danger fade-in" style="display: none; margin-top: 20px; padding: 10px; background: var(--red-bg);"></div>
         </div>
         
         <div style="text-align: center; margin-top: 20px;">
@@ -43,49 +46,7 @@
         </div>
     </div>
 
-    <script>
-        // --- LOGICA DE LOGIN ---
+    <script>checkSessionLogin();</script>
 
-        // 1. Verificar sesión existente
-        async function checkSession() {
-            const { data: { session } } = await db.auth.getSession();
-            if (session) window.location.href = 'admin.html';
-        }
-        checkSession();
-
-        // 2. Iniciar sesión
-        async function iniciarSesion() {
-            const btn = document.getElementById('btnLogin');
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
-            const msg = document.getElementById('errorMsg');
-
-            // UI Loading
-            btn.disabled = true;
-            const textoOriginal = btn.innerText;
-            btn.innerText = "Verificando...";
-            msg.style.display = 'none';
-
-            try {
-                const { data, error } = await db.auth.signInWithPassword({
-                    email: email,
-                    password: password,
-                });
-
-                if (error) throw error;
-
-                // Éxito
-                window.location.href = 'admin.html';
-
-            } catch (error) {
-                console.error("Error login:", error.message);
-                msg.innerText = "Credenciales incorrectas.";
-                msg.style.display = 'block';
-                
-                btn.disabled = false;
-                btn.innerText = textoOriginal;
-            }
-        }
-    </script>
 </body>
 </html>

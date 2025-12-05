@@ -4,11 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tablero de Rentabilidad</title>
-    <link rel="stylesheet" href="style.css">
+    
+    <link rel="stylesheet" href="assets/css/style.css">
+    
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <script src="config.js"></script>
+    <script src="assets/js/dashboard.js" defer></script>
 </head>
 <body>
 
@@ -69,7 +73,11 @@
             </div>
 
             <div style="text-align: right; margin: 20px 0;">
-                <button onclick="descargarReporte()" id="btnExportar" style="width: auto; padding: 12px 25px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; display: none; box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);">
+                <button onclick="guardarEnNube()" id="btnGuardarNube" style="display: none; width: auto; padding: 12px 25px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; margin-right: 10px; box-shadow: 0 4px 6px rgba(5, 150, 105, 0.2);">
+                    ☁️ Guardar en Historial
+                </button>
+
+                <button onclick="descargarReporte()" id="btnExportar" style="display: none; width: auto; padding: 12px 25px; background: #2563eb; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);">
                     📥 Descargar Reporte Excel
                 </button>
             </div>
@@ -100,327 +108,10 @@
             <span class="close-modal" onclick="cerrarModalFaltantes()">&times;</span>
             <h2>Productos sin Costo</h2>
             <p class="text-muted">Estos productos se están contando con costo $0.</p>
-            <ul id="listaFaltantes" class="missing-list">
-                </ul>
+            <ul id="listaFaltantes" class="missing-list"></ul>
             <button onclick="cerrarModalFaltantes()" style="margin-top: 20px;">Cerrar</button>
         </div>
     </div>
 
-    <script>
-        // --- CONFIGURACIÓN SUPABASE ---
-        // La conexión 'db' ahora viene desde config.js
-        // No definimos SUPABASE_KEY aquí para mantener el código limpio.
-
-        let MEMORIA_PRECIOS = {}; 
-        let myChart = null;
-        let DATOS_PARA_EXPORTAR = []; 
-        let PRODUCTOS_FALTANTES = new Set(); 
-
-        // 1. CARGA INICIAL
-        window.addEventListener('load', async () => {
-            console.log("Iniciando aplicación...");
-            try {
-                // Usamos 'db' directamente (variable global de config.js)
-                const { data: productos, error } = await db
-                    .from('productos')
-                    .select(`nombre_ml, historial_costos ( costo_compra, fecha_vigencia )`);
-
-                if (error) throw error;
-
-                // Guardar en memoria para acceso rápido
-                productos.forEach(prod => {
-                    if (prod.historial_costos && prod.historial_costos.length > 0) {
-                        MEMORIA_PRECIOS[prod.nombre_ml] = prod.historial_costos.sort((a, b) => 
-                            new Date(b.fecha_vigencia) - new Date(a.fecha_vigencia)
-                        );
-                    }
-                });
-                console.log("Base de datos cargada.");
-            } catch (err) {
-                console.error("Error al conectar con Supabase:", err);
-                alert("Error de conexión (Verifica config.js): " + err.message);
-            } finally {
-                const loadMsg = document.getElementById('loadingMsg');
-                if(loadMsg) loadMsg.style.display = 'none';
-            }
-        });
-
-        // 2. PROCESAR EXCEL
-        document.getElementById('inputExcel').addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            const loadingMsg = document.getElementById('loadingMsg');
-            
-            loadingMsg.style.display = 'block';
-            loadingMsg.innerText = "Analizando archivo...";
-            loadingMsg.className = 'loading';
-
-            reader.onload = (event) => {
-                try {
-                    const data = new Uint8Array(event.target.result);
-                    const workbook = XLSX.read(data, { type: 'array' });
-                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-                    
-                    // Buscar encabezado
-                    const jsonRaw = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                    let headerRow = 0;
-                    let encontrado = false;
-
-                    for(let i = 0; i < Math.min(jsonRaw.length, 20); i++) {
-                        if (jsonRaw[i] && jsonRaw[i].some(c => c && c.toString().toLowerCase().includes("título"))) {
-                            headerRow = i; 
-                            encontrado = true;
-                            break;
-                        }
-                    }
-
-                    if (!encontrado) throw new Error("No se encontró la columna 'Título'. Verifica el Excel.");
-
-                    const ventas = XLSX.utils.sheet_to_json(sheet, { range: headerRow });
-                    if (ventas.length === 0) throw new Error("El archivo está vacío.");
-
-                    procesarDatos(ventas);
-
-                } catch (error) {
-                    console.error("Error grave:", error);
-                    alert("Error al leer el archivo:\n" + error.message);
-                    loadingMsg.innerText = "Error: " + error.message;
-                    loadingMsg.className = 'error';
-                } finally {
-                    if (!document.querySelector('.error')) loadingMsg.style.display = 'none';
-                }
-            };
-
-            reader.readAsArrayBuffer(file);
-        });
-
-        function procesarDatos(ventas) {
-            let totales = { venta: 0, ml: 0, costo: 0, ganancia: 0 };
-            const tbody = document.querySelector('#tablaDetalle tbody');
-            tbody.innerHTML = '';
-            
-            DATOS_PARA_EXPORTAR = []; 
-            const gananciaPorDia = {}; 
-            
-            // Reiniciar lista de faltantes
-            PRODUCTOS_FALTANTES.clear();
-
-            ventas.forEach((fila, index) => {
-                try {
-                    // --- FILTROS ---
-                    const estado = (fila['Estado'] || fila['Estado del paquete'] || "").toLowerCase();
-                    if (estado.includes('cancel') || estado.includes('devolu')) return;
-
-                    const titulo = fila['Título de la publicación'];
-                    if (!titulo) return;
-
-                    // --- FECHA ---
-                    let fechaVenta = new Date();
-                    const rawFecha = fila['Fecha de venta'] || fila['Fecha'];
-                    
-                    if (rawFecha) {
-                        if (typeof rawFecha === 'number') {
-                            fechaVenta = new Date(Math.round((rawFecha - 25569)*86400*1000));
-                        } else if (typeof rawFecha === 'string') {
-                            if (rawFecha.includes('/')) {
-                                const partesEspacio = rawFecha.split(' ');
-                                const partesFecha = partesEspacio[0].split('/'); 
-                                if (partesFecha.length === 3) fechaVenta = new Date(`${partesFecha[2]}-${partesFecha[1]}-${partesFecha[0]}`);
-                            } else {
-                                fechaVenta = new Date(rawFecha);
-                            }
-                        }
-                    }
-                    if (isNaN(fechaVenta.getTime())) fechaVenta = new Date();
-
-                    // --- COSTO HISTÓRICO ---
-                    let costoUnitario = 0;
-                    let uiCosto = `<span class="badge badge-warning">Sin Costo</span>`;
-                    const historial = MEMORIA_PRECIOS[titulo];
-                    
-                    if (historial) {
-                        const costoEncontrado = historial.find(c => new Date(c.fecha_vigencia) <= fechaVenta);
-                        const costoFinal = costoEncontrado ? costoEncontrado : historial[historial.length - 1];
-                        costoUnitario = parseFloat(costoFinal.costo_compra);
-                        uiCosto = `<span class="text-muted">$${costoUnitario.toLocaleString()}</span>`;
-                    }
-
-                    // --- DETECCIÓN DE FALTANTE ---
-                    if (costoUnitario === 0) {
-                        PRODUCTOS_FALTANTES.add(titulo);
-                    }
-
-                    // --- CÁLCULOS ---
-                    const cantidad = parseFloat(fila['Unidades'] || 1);
-                    const precioUnit = parseFloat(fila['Precio unitario de venta de la publicación (ARS)'] || 0);
-                    const ventaBruta = precioUnit * cantidad;
-
-                    let gastosML = 0;
-                    const columnasCostos = ['Cargo por venta', 'Costo de envío', 'Costos de envío (ARS)', 'Impuestos', 'Retención de IIBB'];
-                    columnasCostos.forEach(col => {
-                        if (fila[col]) gastosML += Math.abs(parseFloat(fila[col]));
-                    });
-
-                    const costoTotalMerca = costoUnitario * cantidad;
-                    const gananciaNeta = ventaBruta - gastosML - costoTotalMerca;
-
-                    // Acumuladores
-                    totales.venta += ventaBruta;
-                    totales.ml += gastosML;
-                    totales.costo += costoTotalMerca;
-                    totales.ganancia += gananciaNeta;
-
-                    const keyFecha = fechaVenta.toISOString().split('T')[0];
-                    if (!gananciaPorDia[keyFecha]) gananciaPorDia[keyFecha] = 0;
-                    gananciaPorDia[keyFecha] += gananciaNeta;
-
-                    // --- PREPARAR PARA EXPORTAR ---
-                    DATOS_PARA_EXPORTAR.push({
-                        "Fecha": fechaVenta.toLocaleDateString(),
-                        "Producto": titulo,
-                        "Venta Bruta ($)": ventaBruta,
-                        "Costos ML ($)": gastosML * -1,
-                        "Costo Mercadería ($)": costoTotalMerca * -1,
-                        "Ganancia Neta ($)": gananciaNeta
-                    });
-
-                    // --- RENDER TABLA ---
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td style="font-size:0.85em">${fechaVenta.toLocaleDateString()}</td>
-                        <td style="font-size:0.9em; max-width:250px;"><b>${titulo}</b></td>
-                        <td>$${ventaBruta.toLocaleString()}</td>
-                        <td class="text-danger">-$${gastosML.toLocaleString()}</td>
-                        <td><div class="text-danger">-$${costoTotalMerca.toLocaleString()}</div>${uiCosto}</td>
-                        <td class="${gananciaNeta >= 0 ? 'text-success' : 'text-danger'}" style="font-weight:bold">
-                            $${gananciaNeta.toLocaleString()}
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-
-                } catch (errFila) {
-                    console.warn("Fila ignorada:", errFila);
-                }
-            });
-
-            actualizarDashboard(totales);
-            renderizarGrafico(gananciaPorDia);
-            actualizarBotonMagico();
-
-            // Mostrar Dashboard y Botón Exportar
-            document.getElementById('dashboard').style.display = 'block';
-            if (DATOS_PARA_EXPORTAR.length > 0) {
-                document.getElementById('btnExportar').style.display = 'inline-block';
-            }
-        }
-
-        // --- FUNCIONES DEL BOTÓN MÁGICO ---
-        function actualizarBotonMagico() {
-            const container = document.getElementById('alertContainer');
-            const countSpan = document.getElementById('countFaltantes');
-            const cantidad = PRODUCTOS_FALTANTES.size;
-
-            if (cantidad > 0) {
-                countSpan.innerText = cantidad;
-                container.style.display = 'block';
-            } else {
-                container.style.display = 'none';
-            }
-        }
-
-        function abrirModalFaltantes() {
-            const lista = document.getElementById('listaFaltantes');
-            lista.innerHTML = ''; 
-
-            PRODUCTOS_FALTANTES.forEach(nombre => {
-                const nombreURL = encodeURIComponent(nombre);
-                
-                const li = document.createElement('li');
-                li.className = 'missing-item';
-                li.innerHTML = `
-                    <span title="${nombre}">${nombre}</span>
-                    <a href="admin.html?producto=${nombreURL}" target="_blank" class="btn-fix">
-                        Cargar Precio ➜
-                    </a>
-                `;
-                lista.appendChild(li);
-            });
-
-            document.getElementById('modalFaltantes').classList.add('open');
-        }
-
-        function cerrarModalFaltantes() {
-            document.getElementById('modalFaltantes').classList.remove('open');
-        }
-
-        // Cerrar modal si hacen click afuera
-        document.getElementById('modalFaltantes').addEventListener('click', (e) => {
-            if (e.target.id === 'modalFaltantes') cerrarModalFaltantes();
-        });
-
-
-        // --- FUNCIONES DASHBOARD ---
-        function actualizarDashboard(t) {
-            document.getElementById('totalVentas').innerText = `$${t.venta.toLocaleString()}`;
-            document.getElementById('totalCostosML').innerText = `-$${t.ml.toLocaleString()}`;
-            document.getElementById('totalCostoMercaderia').innerText = `-$${t.costo.toLocaleString()}`;
-            document.getElementById('totalGanancia').innerText = `$${t.ganancia.toLocaleString()}`;
-            
-            const margen = t.venta > 0 ? ((t.ganancia / t.venta) * 100).toFixed(1) : 0;
-            const uiMargen = document.getElementById('totalMargen');
-            uiMargen.innerText = `${margen}%`;
-            
-            uiMargen.parentElement.className = `metric-box ${margen > 15 ? 'metric-ganancia' : (margen > 0 ? 'badge-warning' : 'text-danger')}`;
-        }
-
-        function renderizarGrafico(dataDias) {
-            const ctx = document.getElementById('chartVentas').getContext('2d');
-            const fechasOrdenadas = Object.keys(dataDias).sort();
-            const valores = fechasOrdenadas.map(f => dataDias[f]);
-            const etiquetas = fechasOrdenadas.map(f => {
-                const parts = f.split('-'); return `${parts[2]}/${parts[1]}`;
-            });
-
-            if (myChart) myChart.destroy();
-
-            myChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: etiquetas,
-                    datasets: [{
-                        label: 'Ganancia Neta ($)',
-                        data: valores,
-                        backgroundColor: valores.map(v => v >= 0 ? '#10b981' : '#ef4444'),
-                        borderRadius: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { y: { beginAtZero: true } }
-                }
-            });
-        }
-
-        // --- EXPORTAR A EXCEL ---
-        function descargarReporte() {
-            if (DATOS_PARA_EXPORTAR.length === 0) return alert("No hay datos para exportar");
-
-            const ws = XLSX.utils.json_to_sheet(DATOS_PARA_EXPORTAR);
-            
-            ws['!cols'] = [
-                {wch: 12}, {wch: 60}, {wch: 15}, {wch: 15}, {wch: 15}, {wch: 15}
-            ];
-
-            const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Rentabilidad");
-            
-            const hoy = new Date().toISOString().slice(0,10);
-            XLSX.writeFile(wb, `Reporte_Rentabilidad_${hoy}.xlsx`);
-        }
-    </script>
 </body>
 </html>
