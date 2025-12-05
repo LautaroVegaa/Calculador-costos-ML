@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cargar Costos - Panel Admin</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <nav class="nav-container">
+        <a href="index.html" class="nav-link">📊 Tablero de Ventas</a>
+        <a href="admin.html" class="nav-link active">📦 Cargar Costos</a>
+    </nav>
+
+    <div class="container" style="max-width: 500px;">
+        <div class="card">
+            <h2>Nuevo Precio de Costo</h2>
+            <p style="text-align: center; color: #666; font-size: 0.9em; margin-bottom: 30px;">
+                Registra el precio de compra y su fecha de vigencia.
+            </p>
+
+            <label>Título exacto de MercadoLibre</label>
+            <input type="text" id="nombreProducto" placeholder="Pega el título exacto aquí..." autocomplete="off" />
+            <div class="hint">Tip: Copialo del Excel de ventas.</div>
+
+            <label>Costo de Compra ($)</label>
+            <input type="number" id="costo" placeholder="Ej: 5000" />
+
+            <label>Fecha de Vigencia</label>
+            <input type="date" id="fecha" />
+            <div class="hint">Fecha desde la cual aplica este costo.</div>
+
+            <button onclick="guardarCosto()" id="btnGuardar">Guardar Precio</button>
+            
+            <div id="mensaje"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURACIÓN SUPABASE ---
+        const SUPABASE_URL = 'https://vmxixhhszyzodnpvqaqu.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZteGl4aGhzenl6b2RucHZxYXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4OTMxNzMsImV4cCI6MjA4MDQ2OTE3M30.tOv4o_hxSwCyLEiohLVW99mt6NGzOsvy3ptswV4Qb8Q';
+        
+        const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // Poner fecha de hoy por defecto
+        document.getElementById('fecha').valueAsDate = new Date();
+
+        async function guardarCosto() {
+            const btn = document.getElementById('btnGuardar');
+            const nombre = document.getElementById('nombreProducto').value.trim();
+            const costo = document.getElementById('costo').value;
+            const fecha = document.getElementById('fecha').value;
+
+            if (!nombre || !costo || !fecha) {
+                mostrarMensaje("Por favor completa todos los campos", false);
+                return;
+            }
+
+            btn.disabled = true;
+            btn.innerText = "Guardando...";
+
+            try {
+                // 1. BUSCAR O CREAR PRODUCTO
+                let { data: productoExistente, error: errorBusqueda } = await db
+                    .from('productos')
+                    .select('id')
+                    .eq('nombre_ml', nombre)
+                    .maybeSingle(); 
+
+                if (errorBusqueda) throw errorBusqueda;
+
+                let productoId;
+
+                if (productoExistente) {
+                    productoId = productoExistente.id;
+                    console.log("Producto ya existe, ID:", productoId);
+                } else {
+                    // Si no existe, lo creamos
+                    console.log("Creando producto nuevo...");
+                    const { data: nuevoProducto, error: errorCreacion } = await db
+                        .from('productos')
+                        .insert([{ nombre_ml: nombre }])
+                        .select()
+                        .single();
+                    
+                    if (errorCreacion) throw errorCreacion;
+                    productoId = nuevoProducto.id;
+                }
+
+                // 2. INSERTAR EL COSTO EN EL HISTORIAL
+                const { error: errorHistorial } = await db
+                    .from('historial_costos')
+                    .insert([
+                        { 
+                            producto_id: productoId, 
+                            costo_compra: costo, 
+                            fecha_vigencia: fecha 
+                        }
+                    ]);
+
+                if (errorHistorial) throw errorHistorial;
+
+                mostrarMensaje("¡Guardado correctamente! ✅", true);
+                
+                // Limpiar campo de costo y volver el foco al título para seguir cargando rápido
+                document.getElementById('costo').value = '';
+                document.getElementById('nombreProducto').value = '';
+                document.getElementById('nombreProducto').focus();
+
+            } catch (err) {
+                console.error(err);
+                mostrarMensaje("Error: " + err.message, false);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Guardar Precio";
+            }
+        }
+
+        function mostrarMensaje(texto, esExito) {
+            const div = document.getElementById('mensaje');
+            div.innerText = texto;
+            div.style.display = 'block';
+            div.className = esExito ? 'exito' : 'error';
+            setTimeout(() => div.style.display = 'none', 3000);
+        }
+    </script>
+</body>
+</html>

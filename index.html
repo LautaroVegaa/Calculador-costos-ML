@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tablero de Rentabilidad</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <nav class="nav-container">
+        <a href="index.html" class="nav-link active">📊 Tablero de Ventas</a>
+        <a href="admin.html" class="nav-link">📦 Cargar Costos</a>
+    </nav>
+
+    <div class="container">
+        <h1>Rentabilidad Real</h1>
+
+        <div class="card">
+            <div class="upload-area">
+                <span class="upload-icon">📂</span>
+                <strong>Haz clic o arrastra el Excel de Ventas aquí</strong>
+                <p class="upload-hint">Soporta .xlsx, .xls, .csv</p>
+                <input type="file" id="inputExcel" accept=".xlsx, .xls, .csv" />
+            </div>
+            <div id="loadingMsg" class="loading">Conectando a la base de datos...</div>
+        </div>
+
+        <div class="card" id="resultados" style="display:none;">
+            <div class="resumen">
+                <div class="metric-box"> 
+                    <small>Facturación</small> 
+                    <b id="totalVentas">$0</b> 
+                </div>
+                <div class="metric-box"> 
+                    <small>Comisiones ML</small> 
+                    <b id="totalCostosML" class="text-danger">$0</b> 
+                </div>
+                <div class="metric-box"> 
+                    <small>Costo Mercadería</small> 
+                    <b id="totalCostoMercaderia" class="text-danger">$0</b> 
+                </div>
+                <div class="metric-box metric-ganancia"> 
+                    <small>Ganancia Neta</small> 
+                    <b id="totalGanancia">$0</b> 
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table id="tablaDetalle">
+                    <thead>
+                        <tr>
+                            <th style="width: 10%;">Fecha</th>
+                            <th style="width: 35%;">Producto</th>
+                            <th>Venta</th>
+                            <th>Costos ML</th>
+                            <th>Costo Histórico</th>
+                            <th>Ganancia</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURACIÓN SUPABASE ---
+        const SUPABASE_URL = 'https://vmxixhhszyzodnpvqaqu.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZteGl4aGhzenl6b2RucHZxYXF1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4OTMxNzMsImV4cCI6MjA4MDQ2OTE3M30.tOv4o_hxSwCyLEiohLVW99mt6NGzOsvy3ptswV4Qb8Q';
+        
+        const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        let MEMORIA_PRECIOS = {}; 
+
+        // 1. CARGA INICIAL
+        window.addEventListener('load', async () => {
+            console.log("Iniciando sistema...");
+            const { data: productos, error } = await db
+                .from('productos')
+                .select(`nombre_ml, historial_costos ( costo_compra, fecha_vigencia )`);
+
+            if (error) {
+                console.error("Error:", error);
+                alert("Error de conexión. Revisa la consola.");
+                return;
+            }
+
+            productos.forEach(prod => {
+                if (prod.historial_costos && prod.historial_costos.length > 0) {
+                    // Ordenamos fecha descendente (más nuevo primero)
+                    const historialOrdenado = prod.historial_costos.sort((a, b) => 
+                        new Date(b.fecha_vigencia) - new Date(a.fecha_vigencia)
+                    );
+                    MEMORIA_PRECIOS[prod.nombre_ml] = historialOrdenado;
+                }
+            });
+        });
+
+        document.getElementById('inputExcel').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            const reader = new FileReader();
+            document.getElementById('loadingMsg').style.display = 'block';
+
+            reader.onload = (event) => {
+                const data = new Uint8Array(event.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                
+                // Detección encabezados
+                const rawData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                let headerRow = 0;
+                for(let i = 0; i < rawData.length; i++) {
+                    if (rawData[i] && rawData[i].some(cell => cell && cell.toString().includes("Título de la publicación"))) {
+                        headerRow = i; break;
+                    }
+                }
+
+                const ventas = XLSX.utils.sheet_to_json(sheet, { range: headerRow });
+                procesarVentasInteligente(ventas);
+                document.getElementById('loadingMsg').style.display = 'none';
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        function procesarVentasInteligente(ventas) {
+            let tVenta = 0, tML = 0, tCosto = 0, tGanancia = 0;
+            const tbody = document.querySelector('#tablaDetalle tbody');
+            tbody.innerHTML = ''; 
+
+            ventas.forEach(fila => {
+                const titulo = fila['Título de la publicación'];
+                if (!titulo) return;
+
+                // --- FECHA ---
+                let fechaVenta = new Date(); 
+                if (fila['Fecha de venta']) {
+                    if (typeof fila['Fecha de venta'] === 'string') {
+                        const partes = fila['Fecha de venta'].split(' ')[0].split('/'); 
+                        if (partes.length === 3) fechaVenta = new Date(`${partes[2]}-${partes[1]}-${partes[0]}`);
+                    } else {
+                        fechaVenta = new Date(fila['Fecha de venta']);
+                    }
+                }
+
+                // --- COSTO HISTÓRICO ---
+                let costoAplicado = 0;
+                let uiCosto = `<span class="badge badge-warning">Sin precio</span>`;
+
+                const historial = MEMORIA_PRECIOS[titulo];
+                
+                if (historial) {
+                    const costoEncontrado = historial.find(c => new Date(c.fecha_vigencia) <= fechaVenta);
+                    
+                    if (costoEncontrado) {
+                        costoAplicado = parseFloat(costoEncontrado.costo_compra);
+                        uiCosto = `<span class="text-muted">$${costoAplicado.toLocaleString()}</span>`;
+                    } else {
+                         const costoMasViejo = historial[historial.length - 1];
+                         costoAplicado = parseFloat(costoMasViejo.costo_compra);
+                         uiCosto = `<span class="text-muted">$${costoAplicado.toLocaleString()} (Est.)</span>`;
+                    }
+                }
+
+                // --- CÁLCULOS ---
+                const cantidad = parseFloat(fila['Unidades'] || 1);
+                const precioUnitario = parseFloat(fila['Precio unitario de venta de la publicación (ARS)'] || 0);
+                const ventaBruta = precioUnitario * cantidad;
+
+                const gastosML = Math.abs(parseFloat(fila['Cargo por venta'] || 0)) +
+                                 Math.abs(parseFloat(fila['Costo fijo'] || 0)) +
+                                 Math.abs(parseFloat(fila['Costos de envío (ARS)'] || 0)) +
+                                 Math.abs(parseFloat(fila['Impuestos'] || 0));
+
+                const costoTotalMercaderia = costoAplicado * cantidad;
+                const ganancia = ventaBruta - gastosML - costoTotalMercaderia;
+
+                tVenta += ventaBruta; tML += gastosML; tCosto += costoTotalMercaderia; tGanancia += ganancia;
+
+                // --- RENDER ---
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td class="text-muted" style="font-size:0.85em;">${fechaVenta.toLocaleDateString()}</td>
+                    <td><b>${titulo}</b></td>
+                    <td>$${ventaBruta.toLocaleString()}</td>
+                    <td class="text-danger">-$${gastosML.toLocaleString()}</td>
+                    <td>
+                        <div class="text-danger">-$${costoTotalMercaderia.toLocaleString()}</div>
+                        ${uiCosto}
+                    </td>
+                    <td class="${ganancia >= 0 ? 'text-success' : 'text-danger'}">$${ganancia.toLocaleString()}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            document.getElementById('totalVentas').innerText = `$${tVenta.toLocaleString()}`;
+            document.getElementById('totalCostosML').innerText = `-$${tML.toLocaleString()}`;
+            document.getElementById('totalCostoMercaderia').innerText = `-$${tCosto.toLocaleString()}`;
+            document.getElementById('totalGanancia').innerText = `$${tGanancia.toLocaleString()}`;
+            document.getElementById('resultados').style.display = 'block';
+        }
+    </script>
+</body>
+</html>
